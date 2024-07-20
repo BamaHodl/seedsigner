@@ -227,7 +227,7 @@ class ElectrumSeed(Seed):
     def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> str:
         embit_network = NETWORKS[SettingsConstants.map_network_to_embit(network)]
         if SettingsConstants.ELECTRUM_SEED_SEGWIT == self._electrum_seed_type:
-            return embit_network["zpub"] if SettingsConstants.SINGLE_SIG == wallet_type else embit_network["Zpub"]
+            return embit_network["zpub"] if SettingsConstants.SINGLE_SIG == sig_type else embit_network["Zpub"]
         else:
             return embit_network["xpub"]
 
