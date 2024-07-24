@@ -98,6 +98,7 @@ class FontAwesomeIconConstants:
     SQUARE_CARET_LEFT = "\uf191"
     SQUARE_CARET_RIGHT = "\uf152"
     SQUARE_CARET_UP = "\uf151"
+    SQUARE_PLUS ="\uf196"
     UNLOCK = "\uf09c"
     X = "\u0058"
 

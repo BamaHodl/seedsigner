@@ -271,6 +271,41 @@ class SpecterXPubQrEncoder(BaseSimpleAnimatedQREncoder, BaseXpubQrEncoder):
 
 
 
+@dataclass
+class PwmgrQrEncoder(BaseSimpleAnimatedQREncoder):
+    encrypted_data: str = None
+
+    @property
+    def qr_max_fragment_size(self):
+        density_mapping = {
+            SettingsConstants.DENSITY__LOW: 40,
+            SettingsConstants.DENSITY__MEDIUM: 65,
+            SettingsConstants.DENSITY__HIGH: 90,
+        }
+        return density_mapping.get(self.qr_density, 65)
+
+
+    def _create_parts(self):
+        start = 0
+        stop = self.qr_max_fragment_size
+        qr_cnt = ((len(self.encrypted_data)-1) // self.qr_max_fragment_size) + 1
+
+        if qr_cnt == 1:
+            self.parts.append(self.encrypted_data[start:stop])
+
+        cnt = 0
+        while cnt < qr_cnt and qr_cnt != 1:
+            part = "pwm" + str(cnt+1) + "of" + str(qr_cnt) + " " + self.encrypted_data[start:stop]
+            self.parts.append(part)
+
+            start = start + self.qr_max_fragment_size
+            stop = stop + self.qr_max_fragment_size
+            if stop > len(self.encrypted_data):
+                stop = len(self.encrypted_data)
+            cnt += 1
+
+
+
 """**************************************************************************************
     Fountain encoded animated QR encoders
 **************************************************************************************"""

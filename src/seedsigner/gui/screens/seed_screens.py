@@ -1576,3 +1576,52 @@ class SeedSignMessageConfirmAddressScreen(ButtonListScreen):
             screen_y=derivation_path_display.screen_y + derivation_path_display.height + 2*GUIConstants.COMPONENT_PADDING,
         )
         self.components.append(address_display)
+
+
+
+@dataclass
+class SeedPwmgrViewEntryScreen(ButtonListScreen):
+    page_num: int = None
+    title : str = "Entry"
+
+    def __post_init__(self):
+        from seedsigner.controller import Controller
+        renderer = Renderer.get_instance()
+        start_y = GUIConstants.TOP_NAV_HEIGHT + GUIConstants.COMPONENT_PADDING
+        end_y = renderer.canvas_height - GUIConstants.EDGE_PADDING - GUIConstants.BUTTON_HEIGHT - GUIConstants.COMPONENT_PADDING
+        message_height = end_y - start_y
+
+        # TODO: Pass the full message in from the View so that this Screen doesn't need to
+        # interact with the Controller here.
+        self.pwmgr_data = Controller.get_instance().pwmgr_data
+        #self.entry = 
+        if "paged_message" not in self.pwmgr_data:
+            paged = reflow_text_into_pages(
+                text=self.pwmgr_data["formatted_entry"],
+                width=renderer.canvas_width - 2*GUIConstants.EDGE_PADDING,
+                height=message_height,
+            )
+            self.pwmgr_data["paged_message"] = paged
+
+        if self.page_num >= len(self.pwmgr_data["paged_message"]):
+            raise Exception("Bug in paged_message calculation")
+
+        if len(self.pwmgr_data["paged_message"]) != 1:
+            self.title = self.title[:10] + f""" (pt {self.page_num + 1}/{len(self.pwmgr_data["paged_message"])})"""
+        self.is_bottom_list = True
+        self.is_button_text_centered = True
+        button_text = "Next" if (self.page_num < len(self.pwmgr_data['paged_message'])-1) else "Done"
+        self.button_data = [button_text]
+
+        super().__post_init__()
+
+        message_display = TextArea(
+            text=self.pwmgr_data["paged_message"][self.page_num],
+            is_text_centered=False,
+            allow_text_overflow=True,
+            screen_y=start_y,
+        )
+        self.components.append(message_display)
+
+
+

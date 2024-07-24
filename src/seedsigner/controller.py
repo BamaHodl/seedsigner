@@ -122,6 +122,7 @@ class Controller(Singleton):
     address_explorer_data: dict = None
 
     sign_message_data: dict = None
+    pwmgr_data: dict = None
     # TODO: end refactor section
 
     # Destination placeholder for when we need to jump out to a side flow but intend to
@@ -132,6 +133,9 @@ class Controller(Singleton):
     FLOW__VERIFY_SINGLESIG_ADDR = "singlesig_addr"
     FLOW__ADDRESS_EXPLORER = "address_explorer"
     FLOW__SIGN_MESSAGE = "sign_message"
+    FLOW__DECRYPT_PWMGR = "decrypt_pwmgr"
+    FLOW__ENCRYPT_PWMGR = "encrypt_pwmgr"
+    FLOW__GENERATE_PASS = "generate_pass"
     resume_main_flow: str = None
 
     back_stack: BackStack = None

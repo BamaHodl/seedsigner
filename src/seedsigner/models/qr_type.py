@@ -31,4 +31,6 @@ class QRType:
     ACCOUNT__UR = "account__ur"
     BYTES__UR = "bytes__ur"
 
+    PWMGR = "pwmgr"
+
     INVALID = "invalid"

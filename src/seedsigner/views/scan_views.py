@@ -153,6 +153,17 @@ class ScanView(View):
                     )
                 )
             
+            elif self.decoder.is_pwmgr:
+                from seedsigner.views.tools_views import PwmgrStartDecryptView
+                encrypted_pwmgr = self.decoder.get_qr_data()["encrypted_pwmgr"]
+
+                return Destination(
+                    PwmgrStartDecryptView,
+                    view_args=dict(
+                        encrypted_pwmgr=encrypted_pwmgr
+                    )
+                )
+
             else:
                 return Destination(NotYetImplementedView)
 

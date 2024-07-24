@@ -3,6 +3,9 @@ import hashlib
 import logging
 import os
 import time
+import json
+import string
+import math
 
 from embit.descriptor import Descriptor
 from PIL import Image
@@ -31,9 +34,10 @@ class ToolsMenuView(View):
     KEYBOARD = ("Calc 12th/24th word", FontAwesomeIconConstants.KEYBOARD)
     ADDRESS_EXPLORER = "Address Explorer"
     VERIFY_ADDRESS = "Verify address"
+    PWMGR = "Password Manager"
 
     def run(self):
-        button_data = [self.IMAGE, self.DICE, self.KEYBOARD, self.ADDRESS_EXPLORER, self.VERIFY_ADDRESS]
+        button_data = [self.IMAGE, self.DICE, self.KEYBOARD, self.ADDRESS_EXPLORER, self.VERIFY_ADDRESS, self.PWMGR]
 
         selected_menu_num = self.run_screen(
             ButtonListScreen,
@@ -60,6 +64,10 @@ class ToolsMenuView(View):
         elif button_data[selected_menu_num] == self.VERIFY_ADDRESS:
             from seedsigner.views.scan_views import ScanAddressView
             return Destination(ScanAddressView)
+
+        #TODO: Put under advanced option
+        elif button_data[selected_menu_num] == self.PWMGR:
+            return Destination(PwmgrStartView)
 
 
 
@@ -111,6 +119,9 @@ class ToolsImageEntropyFinalImageView(View):
             self.controller.image_entropy_final_image = None
             return Destination(BackStackView)
         
+        if self.controller.resume_main_flow == Controller.FLOW__GENERATE_PASS:
+            return Destination(PwmgrGeneratePassLengthView, skip_current_view = True)
+
         return Destination(ToolsImageEntropyMnemonicLengthView)
 
 
@@ -714,3 +725,585 @@ class ToolsAddressExplorerAddressView(View):
     
         # Exiting/Cancelling the QR display screen always returns to the list
         return Destination(ToolsAddressExplorerAddressListView, view_args=dict(is_change=self.is_change, start_index=self.start_index, selected_button_index=self.index - self.start_index, initial_scroll=self.parent_initial_scroll), skip_current_view=True)
+
+
+
+class PwmgrStartView(View):
+    SCAN_PWMGR = ("Scan existing", SeedSignerIconConstants.QRCODE)
+    NEW_PWMGR = ("New PWMgr", FontAwesomeIconConstants.SQUARE_PLUS)
+
+    def run(self):
+        
+        button_data = [
+            self.SCAN_PWMGR,
+            self.NEW_PWMGR,
+        ]
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title="PWMgr",
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            self.controller.pwmgr_data = None
+            return Destination(BackStackView)
+        
+        if button_data[selected_menu_num] == self.SCAN_PWMGR:
+            from seedsigner.views.scan_views import ScanView
+            return Destination(ScanView)
+
+        elif button_data[selected_menu_num] == self.NEW_PWMGR:
+            if not self.controller.pwmgr_data:
+                self.controller.pwmgr_data = dict(pwmgr_dict={})
+            self.controller.pwmgr_data['pwmgr_dict'] = {}
+            return Destination(PwmgrManageView)
+
+
+class PwmgrStartDecryptView(View):
+    """
+    Routes users straight through to the "Decrypt" view if a pwmgr `seed_num` has
+    already been selected. Otherwise routes to `SeedSelectSeedView` to select or
+    load a seed first.
+    """
+    def __init__(self, encrypted_pwmgr: str = None):
+        super().__init__()
+        self.encrypted_pwmgr = encrypted_pwmgr
+
+        #if self.settings.get_value(SettingsConstants.SETTING__MESSAGE_SIGNING) == SettingsConstants.OPTION__DISABLED:
+            #self.set_redirect(Destination(OptionDisabledView, view_args=dict(settings_attr=SettingsConstants.SETTING__MESSAGE_SIGNING)))
+            #return
+
+        data = self.controller.pwmgr_data
+        if not data:
+            data = {}
+            self.controller.pwmgr_data = data
+        
+        if encrypted_pwmgr is not None:
+            self.controller.pwmgr_data["encrypted_pwmgr"] = encrypted_pwmgr
+        # May be None
+        self.seed_num = data.get("seed_num")
+    
+        if self.seed_num is not None:
+            # We already know which seed we're signing with
+            self.set_redirect(Destination(PwmgrDecryptView, skip_current_view=True))
+        else:
+            from seedsigner.views.seed_views import SeedSelectSeedView
+            self.set_redirect(Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__DECRYPT_PWMGR), skip_current_view=True))
+
+
+
+class PwmgrDecryptView(View):
+    """
+    """
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        seed = self.controller.get_seed(self.controller.pwmgr_data['seed_num'])
+        encrypted_pwmgr = self.controller.pwmgr_data['encrypted_pwmgr']
+        xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+        childkey = xprv.derive([0,0])
+        from seedsigner.helpers.ecies import ecies_decrypt_message
+
+        try:
+            decrypted = ecies_decrypt_message(childkey.key, encrypted_pwmgr)
+        except Exception as e:
+            exceptionMessage = str(e)
+            if "InvalidPassword" == exceptionMessage:
+                DireWarningScreen(
+                    title="Incorrect Seed",
+                    status_headline="Error!",
+                    text="Your decryption seed does not match the encryption seed!",
+                    show_back_button=False
+               ).display()
+            else:
+                DireWarningScreen(
+                    title="Error Decrypting",
+                    status_headline="Error!",
+                    text=exceptionMessage,
+                    show_back_button=False
+               ).display()
+
+            from seedsigner.views.view import MainMenuView
+            self.controller.resume_main_flow = None
+            return Destination(MainMenuView)
+
+        try:
+            self.controller.pwmgr_data['pwmgr_dict'] = json.loads(decrypted.decode())
+        except Exception as e:
+            DireWarningScreen(
+                title="Not valid PWMgr data",
+                status_headline="Error!",
+                text=str(e),
+                show_back_button=False
+            ).display()
+            from seedsigner.views.view import MainMenuView
+            self.controller.resume_main_flow = None
+            return Destination(MainMenuView)
+
+        self.controller.sign_message_data = dict()
+        self.controller.sign_message_data["message"] = decrypted.decode()
+        return Destination(PwmgrManageView)
+
+
+
+class PwmgrManageView(View):
+    ENTRIES = "Entries"
+    EXPORT = ("Export Encrypted", SeedSignerIconConstants.QRCODE)
+
+    def run(self):
+        
+        if not 'entries' in self.controller.pwmgr_data['pwmgr_dict']:
+            self.controller.pwmgr_data['pwmgr_dict']['entries'] = list()
+            return Destination(PwmgrManageEntriesView)
+
+        entries = self.controller.pwmgr_data['pwmgr_dict']['entries']
+        button_data = [
+            self.ENTRIES,
+        ]
+        if len(entries)>0:
+            button_data.append(self.EXPORT)
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title="PWMgr",
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            if len(entries) > 0:
+                return Destination(PwmgrExitConfirmView)
+            else:
+                return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.ENTRIES:
+            return Destination(PwmgrManageEntriesView)
+
+        elif button_data[selected_menu_num] == self.EXPORT:
+            # allow user to select seed to encrypt.  May differ from one used to decrypt.
+            from seedsigner.views.seed_views import SeedSelectSeedView
+            return Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__ENCRYPT_PWMGR))
+        
+
+
+
+class PwmgrExitConfirmView(View):
+    EDIT = "Review & Edit"
+    DISCARD = ("Exit & Discard", None, None, "red")
+
+    def run(self):
+        button_data = [self.EDIT, self.DISCARD]
+        selected_menu_num = self.run_screen(
+            WarningScreen,
+            title="Exiting PWMgr!",
+            status_headline=None,
+            text="PWMgr will be discarded, have you exported the encrypted data yet?",
+            show_back_button=False,
+            button_data=button_data,
+        )
+        if button_data[selected_menu_num] == self.EDIT:
+            return Destination(BackStackView)
+
+        elif button_data[selected_menu_num] == self.DISCARD:
+            self.controller.pwmgr_data = None
+            self.controller.resume_main_flow = None
+            return Destination(BackStackView, skip_current_view=True)
+        
+
+
+
+class PwmgrExportView(View):
+    def __init__(self):
+        super().__init__()
+
+
+    def run(self):
+        from seedsigner.helpers.ecies import ecies_encrypt_message
+
+        seed = self.controller.get_seed(self.controller.pwmgr_data['seed_num'])
+        xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+        childkey = xprv.derive([0,0])
+
+        s = json.dumps(self.controller.pwmgr_data["pwmgr_dict"])
+
+        encrypted = ecies_encrypt_message(childkey.get_public_key(), s.encode())
+
+        encoder_args = dict(
+            encrypted_data=encrypted.decode(),
+            qr_density=self.settings.get_value(SettingsConstants.SETTING__QR_DENSITY),
+        )
+
+        from seedsigner.models.encode_qr import PwmgrQrEncoder
+        self.qr_encoder = PwmgrQrEncoder(**encoder_args)
+
+        from seedsigner.gui.screens.screen import QRDisplayScreen
+        self.run_screen(
+            QRDisplayScreen,
+            qr_encoder=self.qr_encoder
+        )
+
+        return Destination(BackStackView)
+
+
+
+class PwmgrManageEntriesView(View):
+    NEW_ENTRY = ("New Entry", FontAwesomeIconConstants.SQUARE_PLUS)
+    def __init__(self):
+        super().__init__()
+
+
+    def run(self):
+        
+        button_data = [
+            self.NEW_ENTRY
+        ]
+        entries = self.controller.pwmgr_data['pwmgr_dict']['entries']
+        for entry in entries:
+            button_text = entry['Title'] if 'Title' in entry else ''
+            button_data.append(button_text)
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title="PWMgr Entries",
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            #return Destination(PwmgrManageView)
+            return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.NEW_ENTRY:
+            entry = dict()
+            entries.append(entry)
+            self.controller.pwmgr_data['selected_index'] = len(entries)-1
+            return Destination(PwmgrManageEntryView)
+
+        else:
+            entry_index = selected_menu_num-1
+            self.controller.pwmgr_data['selected_index'] = entry_index
+            return Destination(PwmgrManageEntryView)
+
+
+
+class PwmgrManageEntryView(View): 
+    VIEW = "View"
+    EDIT = "Edit"
+    DELETE = ("Delete Entry", None, None, "red")
+
+    def run(self):
+        entry_index = self.controller.pwmgr_data['selected_index']
+        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+
+        title = entry["Title"] if "Title" in entry else "PWMgr Entry"
+        
+        button_data = [
+            self.VIEW,
+            self.EDIT,
+            self.DELETE,
+        ]
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title=title,
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            if 0==len(entry):
+                # cleared all fields in edit.  Remove empty entry
+                del self.controller.pwmgr_data['pwmgr_dict']['entries'][entry_index]
+            del self.controller.pwmgr_data['selected_index']
+            #return Destination(PwmgrManageEntriesView)
+            return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.VIEW:
+            title = "Entry"
+            s : str = ""
+            for key in entry:
+                if 'Title' == key:
+                    title = entry[key]
+                    continue
+                if s: #newline between keys but not before first
+                    s+="\n"
+                
+                s+= key + ":\n" + entry[key]
+            self.controller.pwmgr_data['formatted_entry'] = s
+            return Destination(PwmgrViewEntryView, view_args=dict(title=title))
+
+        elif button_data[selected_menu_num] == self.EDIT:
+            return Destination(PwmgrEditEntryView)
+
+        elif button_data[selected_menu_num] == self.DELETE:
+            #TODO: ask for confirmation
+            del self.controller.pwmgr_data['pwmgr_dict']['entries'][entry_index]
+            del self.controller.pwmgr_data['selected_index']
+            #return Destination(PwmgrManageEntriesView)
+            return Destination(BackStackView)
+ 
+
+
+class PwmgrEditEntryView(View): 
+    ADD_FIELD = ("New Field", FontAwesomeIconConstants.SQUARE_PLUS)
+
+    def run(self):
+        entry_index = self.controller.pwmgr_data['selected_index']
+        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+        title = entry["Title"] if "Title" in entry else "PWMgr Entry"
+        
+        button_data = [
+                'Title',
+                'Site',
+                'User',
+                'Pass',
+                'Note',
+                ]
+        for key in entry:
+            if key not in button_data:
+                button_data.append(key)
+
+        button_data.append(self.ADD_FIELD)
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title=title,
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            #return Destination(PwmgrManageEntryView)
+            return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.ADD_FIELD:
+            return Destination(PwmgrAddFieldView)
+
+        elif button_data[selected_menu_num] == 'Pass':
+            return Destination(PwmgrEditPassView)
+        else: #field key selected
+            return Destination(PwmgrEditFieldView, view_args=dict(field_name=button_data[selected_menu_num]))
+            
+
+
+class PwmgrEditPassView(View): 
+    GENERATE_CAM = ("Generate New", FontAwesomeIconConstants.CAMERA)
+    MANUAL_EDIT = ("Manual Edit", FontAwesomeIconConstants.KEYBOARD)
+
+    def run(self):
+        entry_index = self.controller.pwmgr_data['selected_index']
+        button_data = [
+                self.GENERATE_CAM,
+                self.MANUAL_EDIT,
+                ]
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title='Change Pass',
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            #return Destination(PwmgrManageEntryView)
+            return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.GENERATE_CAM:
+            self.controller.resume_main_flow = self.controller.FLOW__GENERATE_PASS
+            return Destination(ToolsImageEntropyLivePreviewView, skip_current_view=True)
+            #return Destination(PwmgrEditFieldView, view_args=dict(field_name='Pass'), skip_current_view=True)
+
+        elif button_data[selected_menu_num] == self.MANUAL_EDIT:
+            return Destination(PwmgrEditFieldView, view_args=dict(field_name='Pass'), skip_current_view=True)
+            
+
+
+
+class PwmgrAddFieldView(View):
+
+    def run(self):
+        entry_index = self.controller.pwmgr_data['selected_index']
+        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+
+
+        from seedsigner.gui.screens.seed_screens import SeedAddPassphraseScreen
+        ret_dict = self.run_screen(SeedAddPassphraseScreen, passphrase="", title="Field name")
+
+        # The new passphrase will be the return value; it might be empty.
+        new_field_name = ret_dict["passphrase"]
+
+        if "is_back_button" in ret_dict:
+            return Destination(BackStackView)
+            
+        elif len(new_field_name) > 0:
+            entry[new_field_name]=""
+            return Destination(PwmgrEditFieldView, view_args=dict(field_name=new_field_name), skip_current_view=True)
+
+        else:
+            #empty, go back as if we didn't enter here
+            return Destination(BackStackView)
+
+
+
+ 
+class PwmgrEditFieldView(View):
+
+    def __init__(self, field_name : str = ""):
+            super().__init__()
+            self.field_name = field_name
+
+    def run(self):
+        entry_index = self.controller.pwmgr_data['selected_index']
+        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+        old_value = entry[self.field_name] if self.field_name in entry else ""
+
+        from seedsigner.gui.screens.seed_screens import SeedAddPassphraseScreen
+        title = "Edit " + self.field_name
+        ret_dict = self.run_screen(SeedAddPassphraseScreen, passphrase=old_value, title=title)
+
+        # The new passphrase will be the return value; it might be empty.
+        new_value = ret_dict["passphrase"]
+
+
+        if "is_back_button" in ret_dict:
+            # in case we were adding new field
+            if self.field_name in entry and 0==len(entry[self.field_name]):
+                del entry[self.field_name]
+            
+        elif len(new_value) > 0:
+            entry[self.field_name] = new_value
+
+        elif self.field_name in entry:
+            del entry[self.field_name]
+
+        return Destination(BackStackView)
+
+
+ 
+class PwmgrViewEntryView(View):
+    def __init__(self, page_num: int = 0, title: str = "Entry"):
+        super().__init__()
+        self.page_num = page_num  # Note: zero-indexed numbering!
+        self.title = title
+
+
+    def run(self):
+        from seedsigner.gui.screens.tools_screens import PwmgrViewEntryScreen
+
+        selected_menu_num = self.run_screen(
+            PwmgrViewEntryScreen,
+            page_num=self.page_num,
+            title = self.title
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            if self.page_num == 0:
+                del self.controller.pwmgr_data["paged_message"]
+                del self.controller.pwmgr_data["formatted_entry"]
+                return Destination(BackStackView)
+            else:
+                return Destination(PwmgrViewEntryView, view_args=dict(page_num=self.page_num -1, title=self.title), skip_current_view=True)
+
+        # User clicked "Next"
+        if self.page_num == len(self.controller.pwmgr_data["paged_message"]) - 1:
+            # We've reached the end of the paged message
+            del self.controller.pwmgr_data["paged_message"]
+            del self.controller.pwmgr_data["formatted_entry"]
+            return Destination(BackStackView)
+        else:
+            return Destination(PwmgrViewEntryView, view_args=dict(page_num=self.page_num + 1, title=self.title), skip_current_view=True)
+
+
+
+class PwmgrGeneratePassLengthView(View):
+    MIN_LENGTH=8
+    MAX_LENGTH=20
+
+    def __init__(self):
+        super().__init__()
+        self.controller.resume_main_flow = None
+        self.character_list = string.ascii_letters + string.digits + string.punctuation
+
+
+    def generate_password_from_bytes(self, entropy: bytes, password_length: int) -> str:
+        bpw = math.log(len(self.character_list), 2)
+        num_bits = bpw * password_length
+
+        password=""
+        n = len(self.character_list)
+        i = int.from_bytes(entropy, 'big', signed=False)
+        while i>0 and len(password) < password_length:
+            x = i % n
+            i = i//n
+            password += self.character_list[x]
+
+        return password
+
+
+    def run(self):
+        button_data = []
+        length_range = range(self.MIN_LENGTH, self.MAX_LENGTH+1)
+        for i in length_range:
+            button_data.append(str(i))
+
+        selected_menu_num = ButtonListScreen(
+            title="Password Length?",
+            button_data=button_data,
+            scroll_y_initial_offset=GUIConstants.BUTTON_HEIGHT * (15-self.MIN_LENGTH),
+            selected_button= 15 - self.MIN_LENGTH,
+            is_button_text_centered=True,
+            is_bottom_list=True,
+        ).display()
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            return Destination(BackStackView)
+        
+        password_length=selected_menu_num+self.MIN_LENGTH
+
+        preview_images = self.controller.image_entropy_preview_frames
+        seed_entropy_image = self.controller.image_entropy_final_image
+
+        # Build in some hardware-level uniqueness via CPU unique Serial num
+        try:
+            stream = os.popen("cat /proc/cpuinfo | grep Serial")
+            output = stream.read()
+            serial_num = output.split(":")[-1].strip().encode('utf-8')
+            serial_hash = hashlib.sha256(serial_num)
+            hash_bytes = serial_hash.digest()
+        except Exception as e:
+            logger.info(repr(e), exc_info=True)
+            hash_bytes = b'0'
+
+        # Build in modest entropy via millis since power on
+        millis_hash = hashlib.sha256(hash_bytes + str(time.time()).encode('utf-8'))
+        hash_bytes = millis_hash.digest()
+
+        # Build in better entropy by chaining the preview frames
+        for frame in preview_images:
+            img_hash = hashlib.sha256(hash_bytes + frame.tobytes())
+            hash_bytes = img_hash.digest()
+
+        # Finally build in our headline entropy via the new full-res image
+        final_hash = hashlib.sha256(hash_bytes + seed_entropy_image.tobytes()).digest()
+
+        # Generate the password
+        password = self.generate_password_from_bytes(final_hash, password_length)
+
+        # Image should never get saved nor stick around in memory
+        seed_entropy_image = None
+        preview_images = None
+        final_hash = None
+        hash_bytes = None
+        self.controller.image_entropy_preview_frames = None
+        self.controller.image_entropy_final_image = None
+
+        entry = self.controller.pwmgr_data['pwmgr_dict']['entries'][self.controller.pwmgr_data['selected_index']]
+        entry['Pass'] = password
+
+        # don't return back to camera preview
+        self.controller.pop_prev_from_back_stack()
+        self.controller.pwmgr_data['formatted_entry'] = "New Pass:\n" + password
+        return Destination(PwmgrViewEntryView)

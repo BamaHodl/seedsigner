@@ -104,6 +104,19 @@ class SeedSelectSeedView(View):
                 text = "Load the seed to sign with"
             else:
                 text = "Select seed to sign with"
+        elif self.flow == Controller.FLOW__DECRYPT_PWMGR:
+            title = "PWMgr Decrypt"
+            if not seeds:
+                text = "Load seed for decryption"
+            else:
+                text = "Select seed for decryption"
+        elif self.flow == Controller.FLOW__ENCRYPT_PWMGR:
+            title = "PWMgr Decrypt"
+            if not seeds:
+                text = "Load seed for encryption"
+            else:
+                text = "Select seed for encryption"
+
 
         else:
             raise Exception(f"Unsupported `flow` specified: {self.flow}")
@@ -144,6 +157,17 @@ class SeedSelectSeedView(View):
             elif self.flow == Controller.FLOW__SIGN_MESSAGE:
                 self.controller.sign_message_data["seed_num"] = selected_menu_num
                 return Destination(SeedSignMessageConfirmMessageView)
+
+            elif self.flow == Controller.FLOW__DECRYPT_PWMGR:
+                self.controller.pwmgr_data["seed_num"] = selected_menu_num
+                from seedsigner.views.tools_views import PwmgrDecryptView
+                return Destination(PwmgrDecryptView)
+
+            elif self.flow == Controller.FLOW__ENCRYPT_PWMGR:
+                self.controller.pwmgr_data["seed_num"] = selected_menu_num
+                from seedsigner.views.tools_views import PwmgrExportView
+                return Destination(PwmgrExportView)
+
 
         self.controller.resume_main_flow = self.flow
 
@@ -534,6 +558,17 @@ class SeedOptionsView(View):
         elif self.controller.resume_main_flow == Controller.FLOW__SIGN_MESSAGE:
             self.controller.sign_message_data["seed_num"] = self.seed_num
             return Destination(SeedSignMessageConfirmMessageView, skip_current_view=True)
+
+        elif self.controller.resume_main_flow == Controller.FLOW__DECRYPT_PWMGR:
+            self.controller.pwmgr_data["seed_num"] = self.seed_num
+            from seedsigner.views.tools_views import PwmgrDecryptView
+            return Destination(PwmgrDecryptView, skip_current_view=True)
+
+        elif self.controller.resume_main_flow == Controller.FLOW__ENCRYPT_PWMGR:
+            self.controller.pwmgr_data["seed_num"] = self.seed_num
+            from seedsigner.views.tools_views import PwmgrExportView
+            return Destination(PwmgrExportView, skip_current_view=True)
+
 
         if self.controller.psbt:
             if PSBTParser.has_matching_input_fingerprint(self.controller.psbt, self.seed, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK)):

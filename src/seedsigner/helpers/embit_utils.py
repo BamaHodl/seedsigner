@@ -58,6 +58,13 @@ def get_standard_derivation_path(network: str = SettingsConstants.MAINNET, walle
 
 
 
+def get_xprv(seed_bytes, derivation_path: str, embit_network: str = "main") -> HDKey:
+    root = bip32.HDKey.from_seed(seed_bytes, version=NETWORKS[embit_network]["xprv"])
+    xprv = root.derive(derivation_path)
+    return xprv
+
+
+
 def get_xpub(seed_bytes, derivation_path: str, embit_network: str = "main") -> HDKey:
     root = bip32.HDKey.from_seed(seed_bytes, version=NETWORKS[embit_network]["xprv"])
     xprv = root.derive(derivation_path)

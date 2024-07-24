@@ -95,6 +95,9 @@ class DecodeQR:
             elif self.qr_type == QRType.WALLET__CONFIGFILE:
                 self.decoder = MultiSigConfigFileQRDecoder()
 
+            elif self.qr_type == QRType.PWMGR:
+                self.decoder = PwmgrQRDecoder()
+
         elif self.qr_type != qr_type:
             raise Exception('QR Fragment Unexpected Type Change')
         
@@ -304,6 +307,10 @@ class DecodeQR:
         return check
 
     @property
+    def is_pwmgr(self):
+        return QRType.PWMGR == self.qr_type
+
+    @property
     def is_settings(self):
         return self.qr_type == QRType.SETTINGS
 
@@ -347,6 +354,9 @@ class DecodeQR:
 
             elif re.search("^UR:CRYPTO-ACCOUNT/", s, re.IGNORECASE):
                 return QRType.ACCOUNT__UR
+
+            elif re.search(r'^pwm(\d+)of(\d+) ([A-Za-z0-9+\/=]+$)', s, re.IGNORECASE): #must be base64 characters only in segment
+                return QRType.PWMGR
 
             elif re.search(r'^p(\d+)of(\d+) ([A-Za-z0-9+\/=]+$)', s, re.IGNORECASE): #must be base64 characters only in segment
                 return QRType.PSBT__SPECTER
@@ -701,6 +711,32 @@ class SpecterPsbtQrDecoder(BaseAnimatedQrDecoder):
 
     def parse_segment(self, segment) -> str:
         return segment.split(" ")[-1].strip()
+
+
+
+class PwmgrQRDecoder(BaseAnimatedQrDecoder):
+    """
+        Used to decode Pwmgr data (encrypted base64) for later decrypting
+    """
+    def get_data(self):
+        return "".join(self.segments)
+
+
+    def current_segment_num(self, segment) -> int:
+        if re.search(r'^pwm(\d+)of(\d+) ', segment, re.IGNORECASE) != None:
+            return int(re.search(r'^pwm(\d+)of(\d+) ', segment, re.IGNORECASE).group(1))
+
+
+    def total_segment_nums(self, segment) -> int:
+        if re.search(r'^pwm(\d+)of(\d+) ', segment, re.IGNORECASE) != None:
+            return int(re.search(r'^pwm(\d+)of(\d+) ', segment, re.IGNORECASE).group(2))
+
+
+    def parse_segment(self, segment) -> str:
+        return segment.split(" ")[-1].strip()
+
+    def get_qr_data(self) -> dict:
+        return dict(encrypted_pwmgr=self.get_data())
 
 
 
