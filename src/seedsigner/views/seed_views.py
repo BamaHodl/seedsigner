@@ -161,12 +161,12 @@ class SeedSelectSeedView(View):
             elif self.flow == Controller.FLOW__DECRYPT_PWMGR:
                 self.controller.pwmgr_data["seed_num"] = selected_menu_num
                 from seedsigner.views.tools_views import PwmgrDecryptView
-                return Destination(PwmgrDecryptView)
+                return Destination(PwmgrDecryptView, skip_current_view = True)
 
             elif self.flow == Controller.FLOW__ENCRYPT_PWMGR:
                 self.controller.pwmgr_data["seed_num"] = selected_menu_num
                 from seedsigner.views.tools_views import PwmgrExportView
-                return Destination(PwmgrExportView)
+                return Destination(PwmgrExportView, skip_current_view=True)
 
 
         self.controller.resume_main_flow = self.flow

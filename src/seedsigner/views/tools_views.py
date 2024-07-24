@@ -910,7 +910,8 @@ class PwmgrExitConfirmView(View):
         elif button_data[selected_menu_num] == self.DISCARD:
             self.controller.pwmgr_data = None
             self.controller.resume_main_flow = None
-            return Destination(BackStackView, skip_current_view=True)
+            from seedsigner.views.view import MainMenuView
+            return Destination(MainMenuView, clear_history=True)
         
 
 
@@ -1256,6 +1257,7 @@ class PwmgrGeneratePassLengthView(View):
             selected_button= 15 - self.MIN_LENGTH,
             is_button_text_centered=True,
             is_bottom_list=True,
+            show_back_button=False,
         ).display()
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
