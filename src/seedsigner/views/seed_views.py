@@ -111,7 +111,7 @@ class SeedSelectSeedView(View):
             else:
                 text = "Select seed for decryption"
         elif self.flow == Controller.FLOW__ENCRYPT_PWMGR:
-            title = "PWMgr Decrypt"
+            title = "PWMgr Encrypt"
             if not seeds:
                 text = "Load seed for encryption"
             else:
