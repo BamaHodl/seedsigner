@@ -1230,9 +1230,6 @@ class PwmgrGeneratePassLengthView(View):
 
 
     def generate_password_from_bytes(self, entropy: bytes, password_length: int) -> str:
-        bpw = math.log(len(self.character_list), 2)
-        num_bits = bpw * password_length
-
         password=""
         n = len(self.character_list)
         i = int.from_bytes(entropy, 'big', signed=False)
