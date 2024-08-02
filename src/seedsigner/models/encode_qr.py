@@ -137,6 +137,19 @@ class CompactSeedQrEncoder(SeedQrEncoder):
 
 
 @dataclass
+class PubkeyQrEncoder(BaseStaticQrEncoder):
+    pubkey : bytes = None
+
+    #override part_to_image so we ensure it encodes pubkey as binary
+    def part_to_image(self, part, width, height, border: int = 3, background_color: str = "ffffff"):
+        return self.qr.qrimage_io(part, width, height, border, background_color=background_color, is_binary=True)
+
+    def next_part(self):
+        return bytes(self.pubkey)
+
+
+
+@dataclass
 class GenericStaticQrEncoder(BaseStaticQrEncoder):
     data: str = None
 

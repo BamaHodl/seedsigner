@@ -32,5 +32,6 @@ class QRType:
     BYTES__UR = "bytes__ur"
 
     PWMGR = "pwmgr"
+    PUBKEY = "pubkey"
 
     INVALID = "invalid"

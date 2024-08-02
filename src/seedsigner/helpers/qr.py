@@ -90,13 +90,21 @@ class QR:
                 ).resize((width,height)).convert('RGBA')
 
 
-    def qrimage_io(self, data, width=240, height=240, border=3, background_color="808080"):
+    def qrimage_io(self, data, width=240, height=240, border=3, background_color="808080", is_binary : bool = False):
         if 1 <= border <= 10:
             border_str = str(border)
         else:
             border_str = "3"
 
-        cmd = f"""qrencode -m {border_str} -s 3 -l L --foreground=000000 --background={background_color} -t PNG -o "/tmp/qrcode.png" "{str(data)}" """
+        if is_binary:
+            ##first write data to file in case it's binary
+            with open("/tmp/qr_data", "wb") as qr_datafile:
+                qr_datafile.write(data)
+                qr_datafile.close()
+            cmd = f"""cat /tmp/qr_data | qrencode -m {border_str} -s 3 -l L --foreground=000000 --background={background_color} -t PNG -o "/tmp/qrcode.png" """
+        else: 
+            cmd = f"""qrencode -m {border_str} -s 3 -l L --foreground=000000 --background={background_color} -t PNG -o "/tmp/qrcode.png" "{str(data)}" """
+
         rv = subprocess.call(cmd, shell=True)
 
         # if qrencode fails, fall back to only encoder

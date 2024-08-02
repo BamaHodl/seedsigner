@@ -437,7 +437,7 @@ class ToolsAddressExplorerAddressTypeScreen(ButtonListScreen):
 
 
 @dataclass
-class PwmgrViewEntryScreen(ButtonListScreen):
+class ViewDecryptedScreen(ButtonListScreen):
     page_num: int = None
     title : str = "Entry"
 
@@ -450,31 +450,31 @@ class PwmgrViewEntryScreen(ButtonListScreen):
 
         # TODO: Pass the full message in from the View so that this Screen doesn't need to
         # interact with the Controller here.
-        self.pwmgr_data = Controller.get_instance().pwmgr_data
+        self.encrypted_data = Controller.get_instance().encrypted_data
         from seedsigner.gui.screens.seed_screens import reflow_text_into_pages
-        if "paged_message" not in self.pwmgr_data:
+        if "paged_message" not in self.encrypted_data:
             paged = reflow_text_into_pages(
-                text=self.pwmgr_data["formatted_entry"],
+                text=self.encrypted_data["formatted_entry"],
                 width=renderer.canvas_width - 2*GUIConstants.EDGE_PADDING,
                 height=message_height,
                 font_name = GUIConstants.FIXED_WIDTH_FONT_NAME,
             )
-            self.pwmgr_data["paged_message"] = paged
+            self.encrypted_data["paged_message"] = paged
 
-        if self.page_num >= len(self.pwmgr_data["paged_message"]):
+        if self.page_num >= len(self.encrypted_data["paged_message"]):
             raise Exception("Bug in paged_message calculation")
 
-        if len(self.pwmgr_data["paged_message"]) != 1:
-            self.title = self.title[:10] + f""" (pt {self.page_num + 1}/{len(self.pwmgr_data["paged_message"])})"""
+        if len(self.encrypted_data["paged_message"]) != 1:
+            self.title = self.title[:10] + f""" (pt {self.page_num + 1}/{len(self.encrypted_data["paged_message"])})"""
         self.is_bottom_list = True
         self.is_button_text_centered = True
-        button_text = "Next" if (self.page_num < len(self.pwmgr_data['paged_message'])-1) else "Done"
+        button_text = "Next" if (self.page_num < len(self.encrypted_data['paged_message'])-1) else "Done"
         self.button_data = [button_text]
 
         super().__post_init__()
 
         message_display = TextArea(
-            text=self.pwmgr_data["paged_message"][self.page_num],
+            text=self.encrypted_data["paged_message"][self.page_num],
             is_text_centered=False,
             allow_text_overflow=True,
             screen_y=start_y,

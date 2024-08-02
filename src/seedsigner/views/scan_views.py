@@ -154,14 +154,23 @@ class ScanView(View):
                 )
             
             elif self.decoder.is_pwmgr:
-                from seedsigner.views.tools_views import PwmgrStartDecryptView
-                encrypted_pwmgr = self.decoder.get_qr_data()["encrypted_pwmgr"]
+                from seedsigner.views.tools_views import StartDecryptView
+                encrypted_data = self.decoder.get_qr_data()["encrypted_data"]
 
                 return Destination(
-                    PwmgrStartDecryptView,
-                    view_args=dict(
-                        encrypted_pwmgr=encrypted_pwmgr
-                    )
+                    StartDecryptView,
+                    view_args=dict(encrypted_data=encrypted_data),
+                    skip_current_view = True
+                )
+
+            elif self.decoder.is_pubkey:
+                from seedsigner.views.tools_views import MessengerStartEncryptView
+                pubkey = self.decoder.get_qr_data()["pubkey"]
+
+                return Destination(
+                    MessengerStartEncryptView,
+                    view_args=dict(pubkey=pubkey),
+                    skip_current_view = True
                 )
 
             else:

@@ -509,6 +509,21 @@ class ButtonListScreen(BaseTopNavScreen):
 
 
 @dataclass
+class ButtonListWithTextScreen(ButtonListScreen):
+    text: str = ""
+
+    def __post_init__(self):
+        self.is_bottom_list = True
+        super().__post_init__()
+
+        self.components.append(TextArea(
+            text=self.text,
+            screen_y=self.top_nav.height + int(GUIConstants.COMPONENT_PADDING/2),
+        ))
+
+
+
+@dataclass
 class LargeButtonScreen(BaseTopNavScreen):
     button_data: list = None                  # list can be a mix of str or tuple(label: str, icon_name: str)
     button_font_name: str = GUIConstants.BUTTON_FONT_NAME

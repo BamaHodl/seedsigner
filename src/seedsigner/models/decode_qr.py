@@ -98,6 +98,9 @@ class DecodeQR:
             elif self.qr_type == QRType.PWMGR:
                 self.decoder = PwmgrQRDecoder()
 
+            elif self.qr_type == QRType.PUBKEY:
+                self.decoder = PubkeyQrDecoder()
+
         elif self.qr_type != qr_type:
             raise Exception('QR Fragment Unexpected Type Change')
         
@@ -108,6 +111,12 @@ class DecodeQR:
         # Process the binary formats first
         if self.qr_type == QRType.SEED__COMPACTSEEDQR:
             rt = self.decoder.add(data, QRType.SEED__COMPACTSEEDQR)
+            if rt == DecodeQRStatus.COMPLETE:
+                self.complete = True
+            return rt
+
+        if self.qr_type == QRType.PUBKEY:
+            rt = self.decoder.add(data)
             if rt == DecodeQRStatus.COMPLETE:
                 self.complete = True
             return rt
@@ -311,6 +320,10 @@ class DecodeQR:
         return QRType.PWMGR == self.qr_type
 
     @property
+    def is_pubkey(self):
+        return QRType.PUBKEY == self.qr_type
+
+    @property
     def is_settings(self):
         return self.qr_type == QRType.SETTINGS
 
@@ -436,6 +449,10 @@ class DecodeQR:
             except Exception as e:
                 # Couldn't extract byte data; assume it's not a byte format
                 pass
+
+        # if it's 33 byte binary data, this should be a pubkey for message encryption
+        if len(s) == 33:
+            return QRType.PUBKEY
 
         return QRType.INVALID
 
@@ -736,7 +753,7 @@ class PwmgrQRDecoder(BaseAnimatedQrDecoder):
         return segment.split(" ")[-1].strip()
 
     def get_qr_data(self) -> dict:
-        return dict(encrypted_pwmgr=self.get_data())
+        return dict(encrypted_data=self.get_data())
 
 
 
@@ -920,6 +937,26 @@ class SettingsQrDecoder(BaseSingleFrameQrDecoder):
         self.complete = True
         self.collected_segments = 1
         return DecodeQRStatus.COMPLETE
+
+
+
+class PubkeyQrDecoder(BaseSingleFrameQrDecoder):
+    """
+        Decodes settings data from the SettingsQR Generator.
+    """
+    def __init__(self):
+        super().__init__()
+        self.data = None
+
+
+    def add(self, segment, qr_type=QRType.PUBKEY):
+        self.data = segment
+        self.complete = True
+        self.collected_segments = 1
+        return DecodeQRStatus.COMPLETE
+
+    def get_qr_data(self) -> dict:
+        return dict(pubkey=self.data)
 
 
 

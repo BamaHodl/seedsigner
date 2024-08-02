@@ -6,14 +6,16 @@ import time
 import json
 import string
 import math
+from binascii import hexlify
 
 from embit.descriptor import Descriptor
+from embit.ec import PublicKey
 from PIL import Image
 from PIL.ImageOps import autocontrast
 
 from seedsigner.controller import Controller
 from seedsigner.gui.components import FontAwesomeIconConstants, GUIConstants, SeedSignerIconConstants
-from seedsigner.gui.screens import (RET_CODE__BACK_BUTTON, ButtonListScreen, WarningScreen, DireWarningScreen)
+from seedsigner.gui.screens import (RET_CODE__BACK_BUTTON, ButtonListScreen, ButtonListWithTextScreen, WarningScreen, DireWarningScreen)
 from seedsigner.gui.screens.tools_screens import (ToolsCalcFinalWordDoneScreen, ToolsCalcFinalWordFinalizePromptScreen,
     ToolsCalcFinalWordScreen, ToolsCoinFlipEntryScreen, ToolsDiceEntropyEntryScreen, ToolsImageEntropyFinalImageScreen,
     ToolsImageEntropyLivePreviewScreen, ToolsAddressExplorerAddressTypeScreen)
@@ -35,9 +37,10 @@ class ToolsMenuView(View):
     ADDRESS_EXPLORER = "Address Explorer"
     VERIFY_ADDRESS = "Verify address"
     PWMGR = "Password Manager"
+    MESSENGER = "Secure Messenger"
 
     def run(self):
-        button_data = [self.IMAGE, self.DICE, self.KEYBOARD, self.ADDRESS_EXPLORER, self.VERIFY_ADDRESS, self.PWMGR]
+        button_data = [self.IMAGE, self.DICE, self.KEYBOARD, self.ADDRESS_EXPLORER, self.VERIFY_ADDRESS, self.PWMGR, self.MESSENGER]
 
         selected_menu_num = self.run_screen(
             ButtonListScreen,
@@ -68,6 +71,10 @@ class ToolsMenuView(View):
         #TODO: Put under advanced option
         elif button_data[selected_menu_num] == self.PWMGR:
             return Destination(PwmgrStartView)
+
+        #TODO: Put under advanced option
+        elif button_data[selected_menu_num] == self.MESSENGER:
+            return Destination(MessengerStartView)
 
 
 
@@ -747,7 +754,7 @@ class PwmgrStartView(View):
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
-            self.controller.pwmgr_data = None
+            self.controller.encrypted_data = None
             return Destination(BackStackView)
         
         if button_data[selected_menu_num] == self.SCAN_PWMGR:
@@ -755,60 +762,47 @@ class PwmgrStartView(View):
             return Destination(ScanView)
 
         elif button_data[selected_menu_num] == self.NEW_PWMGR:
-            if not self.controller.pwmgr_data:
-                self.controller.pwmgr_data = dict(pwmgr_dict={})
-            self.controller.pwmgr_data['pwmgr_dict'] = {}
+            if not self.controller.encrypted_data:
+                self.controller.encrypted_data = dict()
+            self.controller.encrypted_data['decrypted_dict'] = {}
             return Destination(PwmgrManageView)
 
 
-class PwmgrStartDecryptView(View):
+class StartDecryptView(View):
     """
-    Routes users straight through to the "Decrypt" view if a pwmgr `seed_num` has
-    already been selected. Otherwise routes to `SeedSelectSeedView` to select or
+    routes to `SeedSelectSeedView` to select or
     load a seed first.
     """
-    def __init__(self, encrypted_pwmgr: str = None):
+    def __init__(self, encrypted_data: str = None):
         super().__init__()
-        self.encrypted_pwmgr = encrypted_pwmgr
+        self.encrypted_data = encrypted_data
 
-        #if self.settings.get_value(SettingsConstants.SETTING__MESSAGE_SIGNING) == SettingsConstants.OPTION__DISABLED:
-            #self.set_redirect(Destination(OptionDisabledView, view_args=dict(settings_attr=SettingsConstants.SETTING__MESSAGE_SIGNING)))
-            #return
-
-        data = self.controller.pwmgr_data
-        if not data:
-            data = {}
-            self.controller.pwmgr_data = data
+        if not self.controller.encrypted_data:
+            self.controller.encrypted_data = {}
         
-        if encrypted_pwmgr is not None:
-            self.controller.pwmgr_data["encrypted_pwmgr"] = encrypted_pwmgr
-        # May be None
-        self.seed_num = data.get("seed_num")
-    
-        if self.seed_num is not None:
-            # We already know which seed we're signing with
-            self.set_redirect(Destination(PwmgrDecryptView, skip_current_view=True))
-        else:
-            from seedsigner.views.seed_views import SeedSelectSeedView
-            self.set_redirect(Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__DECRYPT_PWMGR), skip_current_view=True))
+        self.controller.encrypted_data["encrypted_data"] = encrypted_data
+        from seedsigner.views.seed_views import SeedSelectSeedView
+        self.set_redirect(Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__DECRYPT), skip_current_view=True))
 
 
 
-class PwmgrDecryptView(View):
+class DecryptView(View):
     """
     """
     def __init__(self):
         super().__init__()
 
     def run(self):
-        seed = self.controller.get_seed(self.controller.pwmgr_data['seed_num'])
-        encrypted_pwmgr = self.controller.pwmgr_data['encrypted_pwmgr']
+        # if we get here, we can clear flow
+        self.controller.resume_main_flow = None
+        seed = self.controller.get_seed(self.controller.encrypted_data['seed_num'])
+        encrypted_data = self.controller.encrypted_data['encrypted_data']
         xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
         childkey = xprv.derive([0,0])
         from seedsigner.helpers.ecies import ecies_decrypt_message
 
         try:
-            decrypted = ecies_decrypt_message(childkey.key, encrypted_pwmgr)
+            decrypted = ecies_decrypt_message(childkey.key, encrypted_data)
         except Exception as e:
             exceptionMessage = str(e)
             if "InvalidPassword" == exceptionMessage:
@@ -827,25 +821,31 @@ class PwmgrDecryptView(View):
                ).display()
 
             from seedsigner.views.view import MainMenuView
-            self.controller.resume_main_flow = None
             return Destination(MainMenuView)
 
         try:
-            self.controller.pwmgr_data['pwmgr_dict'] = json.loads(decrypted.decode())
+            self.controller.encrypted_data['decrypted_dict'] = json.loads(decrypted.decode())
         except Exception as e:
             DireWarningScreen(
-                title="Not valid PWMgr data",
+                title="Not valid json data",
                 status_headline="Error!",
                 text=str(e),
                 show_back_button=False
             ).display()
             from seedsigner.views.view import MainMenuView
-            self.controller.resume_main_flow = None
             return Destination(MainMenuView)
 
-        self.controller.sign_message_data = dict()
-        self.controller.sign_message_data["message"] = decrypted.decode()
-        return Destination(PwmgrManageView)
+        decrypted_dict = self.controller.encrypted_data['decrypted_dict']
+        if "entries" in decrypted_dict:
+            return Destination(PwmgrManageView, skip_current_view=True)
+        elif "message" in decrypted_dict:
+            #clear all encrypted data except formatted_entry, which will be cleared on ViewDecryptedView exit
+            self.controller.encrypted_data = dict()
+            self.controller.encrypted_data['formatted_entry'] = decrypted_dict['message']
+            return Destination(ViewDecryptedView, view_args=dict(title="Message Decrypted"), skip_current_view=True)
+        else:
+            self.controller.encrypted_data = None
+            raise Exception("Unknown type of encrypted data")
 
 
 
@@ -855,11 +855,11 @@ class PwmgrManageView(View):
 
     def run(self):
         
-        if not 'entries' in self.controller.pwmgr_data['pwmgr_dict']:
-            self.controller.pwmgr_data['pwmgr_dict']['entries'] = list()
+        if not 'entries' in self.controller.encrypted_data['decrypted_dict']:
+            self.controller.encrypted_data['decrypted_dict']['entries'] = list()
             return Destination(PwmgrManageEntriesView)
 
-        entries = self.controller.pwmgr_data['pwmgr_dict']['entries']
+        entries = self.controller.encrypted_data['decrypted_dict']['entries']
         button_data = [
             self.ENTRIES,
         ]
@@ -885,7 +885,7 @@ class PwmgrManageView(View):
         elif button_data[selected_menu_num] == self.EXPORT:
             # allow user to select seed to encrypt.  May differ from one used to decrypt.
             from seedsigner.views.seed_views import SeedSelectSeedView
-            return Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__ENCRYPT_PWMGR))
+            return Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__ENCRYPT))
         
 
 
@@ -908,7 +908,7 @@ class PwmgrExitConfirmView(View):
             return Destination(BackStackView)
 
         elif button_data[selected_menu_num] == self.DISCARD:
-            self.controller.pwmgr_data = None
+            self.controller.encrypted_data = None
             self.controller.resume_main_flow = None
             from seedsigner.views.view import MainMenuView
             return Destination(MainMenuView, clear_history=True)
@@ -916,7 +916,7 @@ class PwmgrExitConfirmView(View):
 
 
 
-class PwmgrExportView(View):
+class EncryptedExportView(View):
     def __init__(self):
         super().__init__()
 
@@ -924,11 +924,11 @@ class PwmgrExportView(View):
     def run(self):
         from seedsigner.helpers.ecies import ecies_encrypt_message
 
-        seed = self.controller.get_seed(self.controller.pwmgr_data['seed_num'])
+        seed = self.controller.get_seed(self.controller.encrypted_data['seed_num'])
         xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
         childkey = xprv.derive([0,0])
 
-        s = json.dumps(self.controller.pwmgr_data["pwmgr_dict"])
+        s = json.dumps(self.controller.encrypted_data['decrypted_dict'])
 
         encrypted = ecies_encrypt_message(childkey.get_public_key(), s.encode())
 
@@ -961,7 +961,7 @@ class PwmgrManageEntriesView(View):
         button_data = [
             self.NEW_ENTRY
         ]
-        entries = self.controller.pwmgr_data['pwmgr_dict']['entries']
+        entries = self.controller.encrypted_data['decrypted_dict']['entries']
         for entry in entries:
             button_text = entry['Title'] if 'Title' in entry else ''
             button_data.append(button_text)
@@ -980,12 +980,12 @@ class PwmgrManageEntriesView(View):
         elif button_data[selected_menu_num] == self.NEW_ENTRY:
             entry = dict()
             entries.append(entry)
-            self.controller.pwmgr_data['selected_index'] = len(entries)-1
+            self.controller.encrypted_data['selected_index'] = len(entries)-1
             return Destination(PwmgrManageEntryView)
 
         else:
             entry_index = selected_menu_num-1
-            self.controller.pwmgr_data['selected_index'] = entry_index
+            self.controller.encrypted_data['selected_index'] = entry_index
             return Destination(PwmgrManageEntryView)
 
 
@@ -996,8 +996,8 @@ class PwmgrManageEntryView(View):
     DELETE = ("Delete Entry", None, None, "red")
 
     def run(self):
-        entry_index = self.controller.pwmgr_data['selected_index']
-        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+        entry_index = self.controller.encrypted_data['selected_index']
+        entry = self.controller.encrypted_data['decrypted_dict']['entries'][entry_index]
 
         title = entry["Title"] if "Title" in entry else "PWMgr Entry"
         
@@ -1017,9 +1017,8 @@ class PwmgrManageEntryView(View):
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             if 0==len(entry):
                 # cleared all fields in edit.  Remove empty entry
-                del self.controller.pwmgr_data['pwmgr_dict']['entries'][entry_index]
-            del self.controller.pwmgr_data['selected_index']
-            #return Destination(PwmgrManageEntriesView)
+                del self.controller.encrypted_data['decrypted_dict']['entries'][entry_index]
+            del self.controller.encrypted_data['selected_index']
             return Destination(BackStackView)
         
         elif button_data[selected_menu_num] == self.VIEW:
@@ -1033,17 +1032,16 @@ class PwmgrManageEntryView(View):
                     s+="\n"
                 
                 s+= key + ":\n" + entry[key]
-            self.controller.pwmgr_data['formatted_entry'] = s
-            return Destination(PwmgrViewEntryView, view_args=dict(title=title))
+            self.controller.encrypted_data['formatted_entry'] = s
+            return Destination(ViewDecryptedView, view_args=dict(title=title))
 
         elif button_data[selected_menu_num] == self.EDIT:
             return Destination(PwmgrEditEntryView)
 
         elif button_data[selected_menu_num] == self.DELETE:
             #TODO: ask for confirmation
-            del self.controller.pwmgr_data['pwmgr_dict']['entries'][entry_index]
-            del self.controller.pwmgr_data['selected_index']
-            #return Destination(PwmgrManageEntriesView)
+            del self.controller.encrypted_data['decrypted_dict']['entries'][entry_index]
+            del self.controller.encrypted_data['selected_index']
             return Destination(BackStackView)
  
 
@@ -1052,8 +1050,8 @@ class PwmgrEditEntryView(View):
     ADD_FIELD = ("New Field", FontAwesomeIconConstants.SQUARE_PLUS)
 
     def run(self):
-        entry_index = self.controller.pwmgr_data['selected_index']
-        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+        entry_index = self.controller.encrypted_data['selected_index']
+        entry = self.controller.encrypted_data['decrypted_dict']['entries'][entry_index]
         title = entry["Title"] if "Title" in entry else "PWMgr Entry"
         
         button_data = [
@@ -1095,7 +1093,7 @@ class PwmgrEditPassView(View):
     MANUAL_EDIT = ("Manual Edit", FontAwesomeIconConstants.KEYBOARD)
 
     def run(self):
-        entry_index = self.controller.pwmgr_data['selected_index']
+        entry_index = self.controller.encrypted_data['selected_index']
         button_data = [
                 self.GENERATE_CAM,
                 self.MANUAL_EDIT,
@@ -1115,7 +1113,6 @@ class PwmgrEditPassView(View):
         elif button_data[selected_menu_num] == self.GENERATE_CAM:
             self.controller.resume_main_flow = self.controller.FLOW__GENERATE_PASS
             return Destination(ToolsImageEntropyLivePreviewView, skip_current_view=True)
-            #return Destination(PwmgrEditFieldView, view_args=dict(field_name='Pass'), skip_current_view=True)
 
         elif button_data[selected_menu_num] == self.MANUAL_EDIT:
             return Destination(PwmgrEditFieldView, view_args=dict(field_name='Pass'), skip_current_view=True)
@@ -1126,8 +1123,8 @@ class PwmgrEditPassView(View):
 class PwmgrAddFieldView(View):
 
     def run(self):
-        entry_index = self.controller.pwmgr_data['selected_index']
-        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+        entry_index = self.controller.encrypted_data['selected_index']
+        entry = self.controller.encrypted_data['decrypted_dict']['entries'][entry_index]
 
 
         from seedsigner.gui.screens.seed_screens import SeedAddPassphraseScreen
@@ -1157,8 +1154,8 @@ class PwmgrEditFieldView(View):
             self.field_name = field_name
 
     def run(self):
-        entry_index = self.controller.pwmgr_data['selected_index']
-        entry = self.controller.pwmgr_data["pwmgr_dict"]['entries'][entry_index]
+        entry_index = self.controller.encrypted_data['selected_index']
+        entry = self.controller.encrypted_data['decrypted_dict']['entries'][entry_index]
         old_value = entry[self.field_name] if self.field_name in entry else ""
 
         from seedsigner.gui.screens.seed_screens import SeedAddPassphraseScreen
@@ -1184,7 +1181,7 @@ class PwmgrEditFieldView(View):
 
 
  
-class PwmgrViewEntryView(View):
+class ViewDecryptedView(View):
     def __init__(self, page_num: int = 0, title: str = "Entry"):
         super().__init__()
         self.page_num = page_num  # Note: zero-indexed numbering!
@@ -1192,30 +1189,30 @@ class PwmgrViewEntryView(View):
 
 
     def run(self):
-        from seedsigner.gui.screens.tools_screens import PwmgrViewEntryScreen
+        from seedsigner.gui.screens.tools_screens import ViewDecryptedScreen
 
         selected_menu_num = self.run_screen(
-            PwmgrViewEntryScreen,
+            ViewDecryptedScreen,
             page_num=self.page_num,
             title = self.title
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             if self.page_num == 0:
-                del self.controller.pwmgr_data["paged_message"]
-                del self.controller.pwmgr_data["formatted_entry"]
+                del self.controller.encrypted_data["paged_message"]
+                del self.controller.encrypted_data["formatted_entry"]
                 return Destination(BackStackView)
             else:
-                return Destination(PwmgrViewEntryView, view_args=dict(page_num=self.page_num -1, title=self.title), skip_current_view=True)
+                return Destination(ViewDecryptedView, view_args=dict(page_num=self.page_num -1, title=self.title), skip_current_view=True)
 
         # User clicked "Next"
-        if self.page_num == len(self.controller.pwmgr_data["paged_message"]) - 1:
+        if self.page_num == len(self.controller.encrypted_data["paged_message"]) - 1:
             # We've reached the end of the paged message
-            del self.controller.pwmgr_data["paged_message"]
-            del self.controller.pwmgr_data["formatted_entry"]
+            del self.controller.encrypted_data["paged_message"]
+            del self.controller.encrypted_data["formatted_entry"]
             return Destination(BackStackView)
         else:
-            return Destination(PwmgrViewEntryView, view_args=dict(page_num=self.page_num + 1, title=self.title), skip_current_view=True)
+            return Destination(ViewDecryptedView, view_args=dict(page_num=self.page_num + 1, title=self.title), skip_current_view=True)
 
 
 
@@ -1250,7 +1247,7 @@ class PwmgrGeneratePassLengthView(View):
         selected_menu_num = ButtonListScreen(
             title="Password Length?",
             button_data=button_data,
-            scroll_y_initial_offset=GUIConstants.BUTTON_HEIGHT * (15-self.MIN_LENGTH),
+            scroll_y_initial_offset=GUIConstants.BUTTON_HEIGHT * (14-self.MIN_LENGTH),
             selected_button= 15 - self.MIN_LENGTH,
             is_button_text_centered=True,
             is_bottom_list=True,
@@ -1299,10 +1296,184 @@ class PwmgrGeneratePassLengthView(View):
         self.controller.image_entropy_preview_frames = None
         self.controller.image_entropy_final_image = None
 
-        entry = self.controller.pwmgr_data['pwmgr_dict']['entries'][self.controller.pwmgr_data['selected_index']]
+        entry = self.controller.encrypted_data['decrypted_dict']['entries'][self.controller.encrypted_data['selected_index']]
         entry['Pass'] = password
 
         # don't return back to camera preview
         self.controller.pop_prev_from_back_stack()
-        self.controller.pwmgr_data['formatted_entry'] = "New Pass:\n" + password
-        return Destination(PwmgrViewEntryView)
+        self.controller.encrypted_data['formatted_entry'] = "New Pass:\n" + password
+        return Destination(ViewDecryptedView)
+
+
+class MessengerStartView(View):
+    SCAN = ("Scan pubkey/message", FontAwesomeIconConstants.CAMERA)
+    EXPORT = ("Export pubkey", SeedSignerIconConstants.QRCODE)
+
+    def __init__(self):
+        super().__init__()
+        self.controller.encrypted_data = dict()
+
+    def run(self):
+        
+        button_data = [
+            self.SCAN,
+            self.EXPORT,
+        ]
+
+        selected_menu_num = self.run_screen(
+            ButtonListWithTextScreen,
+            title="Secure Messenger",
+            text="To encrypt or decrypt, scan pubkey or encrypted message",
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            self.controller.encrypted_data = None
+            return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.SCAN:
+            from seedsigner.views.scan_views import ScanView
+            return Destination(ScanView)
+
+        elif button_data[selected_menu_num] == self.EXPORT:
+            # allow user to select seed to use for pubkey
+            from seedsigner.views.seed_views import SeedSelectSeedView
+            return Destination(SeedSelectSeedView, view_args=dict(flow=Controller.FLOW__EXPORT_PUBKEY))
+
+
+class PubkeyExportView(View):
+
+    def run(self):
+        from seedsigner.helpers.ecies import ecies_encrypt_message
+
+        seed = self.controller.get_seed(self.controller.encrypted_data['seed_num'])
+        xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+        childkey = xprv.derive([0,0])
+
+        pubkey = childkey.get_public_key().sec()
+
+        from seedsigner.models.encode_qr import PubkeyQrEncoder
+        self.qr_encoder = PubkeyQrEncoder(pubkey = pubkey)
+
+        from seedsigner.gui.screens.screen import QRDisplayScreen
+        self.run_screen(
+            QRDisplayScreen,
+            qr_encoder=self.qr_encoder,
+        )
+ 
+        return Destination(BackStackView)
+
+
+
+@dataclass
+class MessengerStartEncryptView(View):
+
+    def __init__(self, pubkey: bytes = None):
+        super().__init__()
+        self.controller.encrypted_data = dict(pubkey=pubkey, decrypted_dict=dict())
+        self.controller.encrypted_data['decrypted_dict']['message'] = ''
+        self.set_redirect(Destination(MessengerEditMessageView, skip_current_view=True))
+
+
+
+class MessengerEditMessageView(View):
+
+    def run(self):
+        old_value = self.controller.encrypted_data['decrypted_dict']['message']
+
+        from seedsigner.gui.screens.seed_screens import SeedAddPassphraseScreen
+        title = "Encrypt Message"
+        ret_dict = self.run_screen(SeedAddPassphraseScreen, passphrase=old_value, title=title)
+
+        # The new passphrase will be the return value; it might be empty.
+        new_value = ret_dict["passphrase"]
+
+
+        if "is_back_button" in ret_dict:
+            return Destination(BackStackView)
+            
+        elif len(new_value) > 0:
+            self.controller.encrypted_data['decrypted_dict']['message'] = new_value
+
+        return Destination(MessengerManageMessageView, skip_current_view = True)
+
+
+
+class MessengerManageMessageView(View): 
+    VIEW = "View"
+    EDIT = "Edit"
+    EXPORT = ("Encrypt & Export", SeedSignerIconConstants.QRCODE)
+
+    def run(self):
+
+        button_data = [
+            self.VIEW,
+            self.EDIT,
+            self.EXPORT,
+        ]
+        title = "Encrypt Message"
+
+        selected_menu_num = self.run_screen(
+            ButtonListScreen,
+            title=title,
+            is_button_text_centered=False,
+            button_data=button_data
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            del self.controller.encrypted_data
+            return Destination(BackStackView)
+        
+        elif button_data[selected_menu_num] == self.VIEW:
+            title = "Encrypt Preview"
+            pubkey = self.controller.encrypted_data['pubkey']
+            s = ""
+            s += "Message:\n"
+            s += self.controller.encrypted_data['decrypted_dict']['message'] + "\n\n"
+            s += "Pubkey for encryption:"
+            pubkey_string = hexlify(pubkey).decode()
+            pubkey_part_len = 22
+            start = 0
+            while start < len(pubkey_string):
+                s += "\n" + pubkey_string[start:start+pubkey_part_len]
+                start += pubkey_part_len
+            self.controller.encrypted_data['formatted_entry'] = s
+            return Destination(ViewDecryptedView, view_args=dict(title=title))
+
+        elif button_data[selected_menu_num] == self.EDIT:
+            return Destination(MessengerEditMessageView)
+
+        elif button_data[selected_menu_num] == self.EXPORT:
+            return Destination(MessengerEncryptedExportView)
+ 
+
+
+class MessengerEncryptedExportView(View):
+    def __init__(self):
+        super().__init__()
+
+
+    def run(self):
+        from seedsigner.helpers.ecies import ecies_encrypt_message
+
+        ec_pubkey = PublicKey.from_string(hexlify(self.controller.encrypted_data['pubkey']))
+        s = json.dumps(self.controller.encrypted_data['decrypted_dict'])
+
+        encrypted = ecies_encrypt_message(ec_pubkey, s.encode())
+
+        encoder_args = dict(
+            encrypted_data=encrypted.decode(),
+            qr_density=self.settings.get_value(SettingsConstants.SETTING__QR_DENSITY),
+        )
+
+        from seedsigner.models.encode_qr import PwmgrQrEncoder
+        self.qr_encoder = PwmgrQrEncoder(**encoder_args)
+
+        from seedsigner.gui.screens.screen import QRDisplayScreen
+        self.run_screen(
+            QRDisplayScreen,
+            qr_encoder=self.qr_encoder
+        )
+
+        return Destination(BackStackView)

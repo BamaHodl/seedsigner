@@ -104,18 +104,25 @@ class SeedSelectSeedView(View):
                 text = "Load the seed to sign with"
             else:
                 text = "Select seed to sign with"
-        elif self.flow == Controller.FLOW__DECRYPT_PWMGR:
-            title = "PWMgr Decrypt"
+        elif self.flow == Controller.FLOW__DECRYPT:
+            title = "Decrypt data"
             if not seeds:
                 text = "Load seed for decryption"
             else:
                 text = "Select seed for decryption"
-        elif self.flow == Controller.FLOW__ENCRYPT_PWMGR:
-            title = "PWMgr Encrypt"
+        elif self.flow == Controller.FLOW__ENCRYPT:
+            title = "Encrypt data"
             if not seeds:
                 text = "Load seed for encryption"
             else:
                 text = "Select seed for encryption"
+        elif self.flow == Controller.FLOW__EXPORT_PUBKEY:
+            title = "Export pubkey"
+            if not seeds:
+                text = "Load seed for pubkey export"
+            else:
+                text = "Select seed for pubkey export"
+
 
 
         else:
@@ -158,16 +165,20 @@ class SeedSelectSeedView(View):
                 self.controller.sign_message_data["seed_num"] = selected_menu_num
                 return Destination(SeedSignMessageConfirmMessageView)
 
-            elif self.flow == Controller.FLOW__DECRYPT_PWMGR:
-                self.controller.pwmgr_data["seed_num"] = selected_menu_num
-                from seedsigner.views.tools_views import PwmgrDecryptView
-                return Destination(PwmgrDecryptView, skip_current_view = True)
+            elif self.flow == Controller.FLOW__DECRYPT:
+                self.controller.encrypted_data["seed_num"] = selected_menu_num
+                from seedsigner.views.tools_views import DecryptView
+                return Destination(DecryptView, skip_current_view = True)
 
-            elif self.flow == Controller.FLOW__ENCRYPT_PWMGR:
-                self.controller.pwmgr_data["seed_num"] = selected_menu_num
-                from seedsigner.views.tools_views import PwmgrExportView
-                return Destination(PwmgrExportView, skip_current_view=True)
+            elif self.flow == Controller.FLOW__ENCRYPT:
+                self.controller.encrypted_data["seed_num"] = selected_menu_num
+                from seedsigner.views.tools_views import EncryptedExportView
+                return Destination(EncryptedExportView, skip_current_view=True)
 
+            elif self.flow == Controller.FLOW__EXPORT_PUBKEY:
+                self.controller.encrypted_data["seed_num"] = selected_menu_num
+                from seedsigner.views.tools_views import PubkeyExportView
+                return Destination(PubkeyExportView, skip_current_view=True)
 
         self.controller.resume_main_flow = self.flow
 
@@ -559,16 +570,20 @@ class SeedOptionsView(View):
             self.controller.sign_message_data["seed_num"] = self.seed_num
             return Destination(SeedSignMessageConfirmMessageView, skip_current_view=True)
 
-        elif self.controller.resume_main_flow == Controller.FLOW__DECRYPT_PWMGR:
-            self.controller.pwmgr_data["seed_num"] = self.seed_num
-            from seedsigner.views.tools_views import PwmgrDecryptView
-            return Destination(PwmgrDecryptView, skip_current_view=True)
+        elif self.controller.resume_main_flow == Controller.FLOW__DECRYPT:
+            self.controller.encrypted_data["seed_num"] = self.seed_num
+            from seedsigner.views.tools_views import DecryptView
+            return Destination(DecryptView, skip_current_view=True)
 
-        elif self.controller.resume_main_flow == Controller.FLOW__ENCRYPT_PWMGR:
-            self.controller.pwmgr_data["seed_num"] = self.seed_num
-            from seedsigner.views.tools_views import PwmgrExportView
-            return Destination(PwmgrExportView, skip_current_view=True)
+        elif self.controller.resume_main_flow == Controller.FLOW__ENCRYPT:
+            self.controller.encrypted_data["seed_num"] = self.seed_num
+            from seedsigner.views.tools_views import EncryptedExportView
+            return Destination(EncryptedExportView, skip_current_view=True)
 
+        elif self.controller.resume_main_flow == Controller.FLOW__EXPORT_PUBKEY:
+            self.controller.encrypted_data["seed_num"] = self.seed_num
+            from seedsigner.views.tools_views import PubkeyExportView
+            return Destination(PubkeyExportView, skip_current_view=True)
 
         if self.controller.psbt:
             if PSBTParser.has_matching_input_fingerprint(self.controller.psbt, self.seed, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK)):
