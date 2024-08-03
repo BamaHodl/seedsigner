@@ -797,7 +797,7 @@ class DecryptView(View):
         self.controller.resume_main_flow = None
         seed = self.controller.get_seed(self.controller.encrypted_data['seed_num'])
         encrypted_data = self.controller.encrypted_data['encrypted_data']
-        xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+        xprv = seed.get_xprv(wallet_path=SettingsConstants.ENCRYPTION_PATH, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
         childkey = xprv.derive([0,0])
         from seedsigner.helpers.ecies import ecies_decrypt_message
 
@@ -925,7 +925,7 @@ class EncryptedExportView(View):
         from seedsigner.helpers.ecies import ecies_encrypt_message
 
         seed = self.controller.get_seed(self.controller.encrypted_data['seed_num'])
-        xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+        xprv = seed.get_xprv(wallet_path=SettingsConstants.ENCRYPTION_PATH, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
         childkey = xprv.derive([0,0])
 
         s = json.dumps(self.controller.encrypted_data['decrypted_dict'])
@@ -1348,7 +1348,7 @@ class PubkeyExportView(View):
         from seedsigner.helpers.ecies import ecies_encrypt_message
 
         seed = self.controller.get_seed(self.controller.encrypted_data['seed_num'])
-        xprv = seed.get_xprv(wallet_path='m/0h', network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+        xprv = seed.get_xprv(wallet_path=SettingsConstants.ENCRYPTION_PATH, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
         childkey = xprv.derive([0,0])
 
         pubkey = childkey.get_public_key().sec()

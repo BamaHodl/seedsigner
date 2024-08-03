@@ -210,6 +210,9 @@ class SettingsConstants:
     LABEL__BIP39_PASSPHRASE = "BIP-39 Passphrase"
     LABEL__CUSTOM_EXTENSION = "Custom Extension"   # Terminology used by Electrum seeds
 
+    # Encryption constants
+    ENCRYPTION_PATH = 'm/10599h' # avoid using path used for tx
+
 
 
 @dataclass
